@@ -7,7 +7,8 @@ TOP_CONTEXT_CHUNKS = 2
 
 RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L6-v2"
 
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+# EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+EMBEDDING_MODEL = "sentence-transformers/paraphrase-MiniLM-L3-v2"
 
 LLM_MODEL = "llama-3.3-70b-versatile"
 
