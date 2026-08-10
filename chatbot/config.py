@@ -21,7 +21,7 @@ LLM_MODEL = "llama-3.3-70b-versatile"
 LLM_FALLBACK_MODELS = [
 
 
-    "openai/gpt-oss-120b",
+    # "openai/gpt-oss-120b",
 
     "llama-3.1-8b-instant",
 
@@ -39,7 +39,7 @@ MAX_HISTORY = 6
 
 ENABLE_MEMORY = True
 
-ENABLE_QUERY_REWRITE = False
+ENABLE_QUERY_REWRITE = True
 
 ENABLE_RAG = True
 
