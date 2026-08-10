@@ -1,26 +1,47 @@
 """
 Citation utilities for AgroFlow AI.
 
-Responsible for formatting citations returned
-from the knowledge base.
+Builds a clean source list for the user.
 """
+
+import os
 
 from chatbot.logger import logger
 
 
 # ============================================================
-# FORMAT SINGLE CITATION
+# CLEAN SOURCE NAME
 # ============================================================
 
-def format_citation(document):
+def clean_source_name(document):
 
-    title = document.get(
+    """
+    Returns a user-friendly document name.
 
-        "title",
+    Priority:
 
-        "Unknown Document"
+    1. title
+    2. filename without extension
+    3. Unknown Source
+    """
 
-    )
+    title = document.get("title")
+
+    if title:
+
+        title = title.strip()
+
+        if (
+
+            title
+
+            and
+
+            title.lower() != "unknown document"
+
+        ):
+
+            return title
 
     source = document.get(
 
@@ -30,70 +51,28 @@ def format_citation(document):
 
     )
 
-    section = document.get(
+    filename = os.path.basename(source)
 
-        "section",
+    filename = os.path.splitext(filename)[0]
 
-        "General"
+    filename = filename.replace("_", " ")
 
-    )
+    filename = filename.replace("-", " ")
 
-    page_start = document.get(
+    filename = " ".join(filename.split())
 
-        "page_start"
+    if filename:
 
-    )
+        return filename
 
-    page_end = document.get(
-
-        "page_end"
-
-    )
-
-    lines = [
-
-        f"📄 {title}",
-
-        f"   Source : {source}",
-
-        f"   Section: {section}"
-
-    ]
-
-    if page_start is not None:
-
-        if page_end is None:
-
-            page_end = page_start
-
-        if page_start == page_end:
-
-            lines.append(
-
-                f"   Page   : {page_start}"
-
-            )
-
-        else:
-
-            lines.append(
-
-                f"   Pages  : {page_start}-{page_end}"
-
-            )
-
-    return "\n".join(lines)
+    return "Unknown Source"
 
 
 # ============================================================
 # REMOVE DUPLICATE SOURCES
 # ============================================================
 
-def remove_duplicate_sources(
-
-    documents
-
-):
+def remove_duplicate_sources(documents):
 
     unique = []
 
@@ -101,31 +80,21 @@ def remove_duplicate_sources(
 
     for doc in documents:
 
-        key = (
+        name = clean_source_name(doc)
 
-            doc.get("title"),
-
-            doc.get("source"),
-
-            doc.get("section"),
-
-            doc.get("page_start"),
-
-            doc.get("page_end")
-
-        )
-
-        if key in seen:
+        if name in seen:
 
             continue
 
-        seen.add(key)
+        seen.add(name)
 
         unique.append(doc)
 
     logger.info(
 
-        f"Unique citations: {len(unique)}"
+        "Unique sources: %d",
+
+        len(unique)
 
     )
 
@@ -136,42 +105,42 @@ def remove_duplicate_sources(
 # SORT SOURCES
 # ============================================================
 
-def sort_sources(
-
-    documents
-
-):
+def sort_sources(documents):
 
     return sorted(
 
         documents,
 
-        key=lambda d: (
-
-            d.get("source", ""),
-
-            d.get("page_start", 0)
-
-        )
+        key=lambda d: clean_source_name(d).lower()
 
     )
 
 
 # ============================================================
-# BUILD SOURCES SECTION
+# BUILD SOURCES
 # ============================================================
 
-def build_citations(
+def build_citations(documents):
 
-    documents
+    """
+    Builds a clean list of source documents.
 
-):
+    Example
+
+    AgroFlow Knowledge Base
+    ----------------------------------------
+    Sources
+
+    1. Rice Production Manual
+
+    2. Maize Production Training Manual
+    """
 
     if not documents:
 
         logger.info(
 
-            "No citations to build."
+            "No sources available."
 
         )
 
@@ -193,9 +162,13 @@ def build_citations(
 
         "",
 
+        "AgroFlow Knowledge Base",
+
+        "-" * 40,
+
         "Sources",
 
-        "-" * 40
+        ""
 
     ]
 
@@ -209,24 +182,18 @@ def build_citations(
 
         lines.append(
 
-            f"{index}."
+            f"{index}. {clean_source_name(document)}"
 
         )
 
-        lines.append(
-
-            format_citation(document)
-
-        )
-
-        if index != len(documents):
-
-            lines.append("")
+        lines.append("")
 
     logger.info(
 
-        f"Built {len(documents)} citation(s)."
+        "Built %d source(s).",
+
+        len(documents)
 
     )
 
-    return "\n".join(lines)
+    return "\n".join(lines).rstrip()

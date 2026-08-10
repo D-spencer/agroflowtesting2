@@ -16,13 +16,11 @@ conversation_history = []
 # ============================================================
 
 def get_history():
-
     """
-    Returns only the recent conversation history.
+    Returns the most recent conversation history.
     """
-
-    return conversation_history[-MAX_HISTORY:]
-
+    max_messages = MAX_HISTORY * 2
+    return conversation_history[-max_messages:]
 
 # ============================================================
 # ADD USER MESSAGE

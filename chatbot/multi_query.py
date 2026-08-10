@@ -10,6 +10,7 @@ import logging
 
 from chatbot.llm import ask_llm
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -58,6 +59,12 @@ def generate_multi_queries(
     llm,
     question
 ):
+    """
+    Generate multiple search queries from a question.
+
+    Duplicate queries are removed while preserving
+    the original order.
+    """
 
     messages = [
 
@@ -75,6 +82,11 @@ def generate_multi_queries(
 
     ]
 
+
+    # ========================================================
+    # ASK LLM
+    # ========================================================
+
     response = ask_llm(
 
         client=llm,
@@ -87,6 +99,11 @@ def generate_multi_queries(
 
     )
 
+
+    # ========================================================
+    # SPLIT RESPONSE INTO QUERIES
+    # ========================================================
+
     queries = [
 
         line.strip()
@@ -97,66 +114,157 @@ def generate_multi_queries(
 
     ]
 
-    # --------------------------------------------------------
-    # Remove numbering if the LLM adds it
-    # --------------------------------------------------------
+
+    # ========================================================
+    # REMOVE NUMBERING
+    # ========================================================
 
     cleaned_queries = []
 
+
     for query in queries:
 
+        # ----------------------------------------------------
+        # Remove formats such as:
+        #
+        # 1. query
+        # 2) query
+        # ----------------------------------------------------
+
         if "." in query[:4]:
-            query = query.split(".", 1)[1].strip()
+
+            query = query.split(
+                ".",
+                1
+            )[1].strip()
+
 
         if ")" in query[:4]:
-            query = query.split(")", 1)[1].strip()
+
+            query = query.split(
+                ")",
+                1
+            )[1].strip()
+
+
+        # ----------------------------------------------------
+        # Remove bullet points
+        # ----------------------------------------------------
 
         if query.startswith("-"):
+
             query = query[1:].strip()
 
-        cleaned_queries.append(query)
 
-    # --------------------------------------------------------
-    # Remove duplicates while preserving order
-    # --------------------------------------------------------
+        # ----------------------------------------------------
+        # Ignore empty queries
+        # ----------------------------------------------------
+
+        if not query:
+
+            continue
+
+
+        cleaned_queries.append(
+            query
+        )
+
+
+    # ========================================================
+    # REMOVE DUPLICATE QUERIES
+    # ========================================================
 
     unique_queries = []
 
     seen = set()
 
+
     for query in cleaned_queries:
 
-        key = query.lower()
+        # Normalize only for duplicate checking.
+        #
+        # The original query text is preserved.
 
-        if key not in seen:
+        key = " ".join(
+            query.lower().split()
+        )
 
-            unique_queries.append(query)
 
-            seen.add(key)
+        if key in seen:
 
-    # --------------------------------------------------------
-    # Always include original question
-    # --------------------------------------------------------
+            logger.debug(
+                "Duplicate query removed: %s",
+                query
+            )
 
-    if question.lower() not in seen:
+            continue
 
-        unique_queries.insert(0, question)
 
-    # --------------------------------------------------------
-    # Limit to five queries
-    # --------------------------------------------------------
+        seen.add(key)
+
+        unique_queries.append(
+            query
+        )
+
+
+    # ========================================================
+    # ALWAYS INCLUDE ORIGINAL QUESTION
+    # ========================================================
+
+    original_key = " ".join(
+        question.lower().split()
+    )
+
+
+    if original_key not in seen:
+
+        unique_queries.insert(
+            0,
+            question
+        )
+
+
+    # ========================================================
+    # LIMIT TOTAL QUERIES
+    # ========================================================
 
     unique_queries = unique_queries[:5]
 
-    # --------------------------------------------------------
-    # Logging
-    # --------------------------------------------------------
 
-    logger.info("Multi-Query Generation")
+    # ========================================================
+    # LOGGING
+    # ========================================================
 
-    logger.info("Original Question: %s", question)
+    logger.info(
+        "Multi-Query Generation"
+    )
 
-    for i, query in enumerate(unique_queries, start=1):
-        logger.info("Query %d: %s", i, query)
+
+    logger.info(
+        "Original Question: %s",
+        question
+    )
+
+
+    logger.info(
+        "Generated %d unique search quer%s.",
+        len(unique_queries),
+        "y"
+        if len(unique_queries) == 1
+        else "ies"
+    )
+
+
+    for i, query in enumerate(
+        unique_queries,
+        start=1
+    ):
+
+        logger.info(
+            "Query %d: %s",
+            i,
+            query
+        )
+
 
     return unique_queries

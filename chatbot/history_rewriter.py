@@ -7,7 +7,6 @@ conversation history and the current topic.
 """
 
 from chatbot.llm import ask_llm
-
 from chatbot.logger import logger
 
 
@@ -18,7 +17,7 @@ from chatbot.logger import logger
 HISTORY_REWRITE_SYSTEM_PROMPT = """
 You are an expert agricultural AI assistant.
 
-Your task is to rewrite the user's latest question
+Your task is to rewrite ONLY the user's latest question
 into a complete standalone agricultural question.
 
 You are given:
@@ -27,8 +26,7 @@ You are given:
 2. The recent conversation history.
 3. The user's latest question.
 
-Use BOTH the current topic and conversation history
-to resolve references such as:
+Use conversation history to resolve references such as:
 
 - it
 - they
@@ -41,21 +39,24 @@ to resolve references such as:
 - the plant
 - the disease
 - the animal
+- the fertilizer
+- the treatment
 
 Rules:
 
 1. Preserve the user's original meaning.
 
-2. Prefer the current topic whenever it clearly
-   resolves the ambiguity.
+2. Use conversation history as the primary source
+   for resolving ambiguity.
 
-3. Use conversation history when the topic alone
-   is insufficient.
+3. Use the current topic when it clearly helps.
 
 4. If the question is already standalone,
    return it unchanged.
 
-5. Return ONLY the rewritten question.
+5. Do not add new information.
+
+6. Return ONLY the rewritten question.
 
 Do not answer the question.
 
@@ -67,48 +68,21 @@ Do not explain your reasoning.
 # BUILD HISTORY
 # ============================================================
 
-def build_history(
-
-    history
-
-):
-
+def build_history(history):
     """
     Convert conversation history into
-    plain text for the LLM.
+    readable format for the LLM.
     """
 
     if not history:
-
         return ""
 
-    lines = []
-
-    for message in history:
-
-        role = message.get(
-
-            "role",
-
-            "User"
-
-        ).capitalize()
-
-        content = message.get(
-
-            "content",
-
-            ""
-
-        ).strip()
-
-        lines.append(
-
-            f"{role}: {content}"
-
-        )
-
-    return "\n".join(lines)
+    return "\n".join(
+        f"[{message.get('role', 'user').upper()}] "
+        f"{message.get('content', '').strip()}"
+        for message in history
+        if message.get("content")
+    )
 
 
 # ============================================================
@@ -116,17 +90,11 @@ def build_history(
 # ============================================================
 
 def rewrite_with_history(
-
     llm,
-
     history,
-
     current_topic,
-
     question
-
 ):
-
     """
     Rewrite a follow-up question into
     a standalone agricultural question.
@@ -135,97 +103,85 @@ def rewrite_with_history(
     if not history and not current_topic:
 
         logger.info(
-
             "No history or topic available. Skipping history rewrite."
-
         )
 
         return question
 
-    history_text = build_history(
 
-        history
+    history_text = build_history(history)
 
-    )
+    current_topic = current_topic or "No current topic available."
 
-    if not current_topic:
-
-        current_topic = "UNKNOWN"
 
     messages = [
 
         {
-
             "role": "system",
-
             "content": HISTORY_REWRITE_SYSTEM_PROMPT
-
         },
 
         {
-
-            "role": "user",
-
+            "role": "system",
             "content": f"""
-Current Topic:
+Current Agricultural Topic:
 
 {current_topic}
+"""
+        },
 
+        {
+            "role": "user",
+            "content": f"""
 Conversation History:
 
 {history_text}
+
 
 Current Question:
 
 {question}
 
+
 Rewrite the current question into a standalone agricultural question.
 
 Return ONLY the rewritten question.
 """
-
         }
 
     ]
 
+
     try:
 
         rewritten = ask_llm(
-
             client=llm,
-
             messages=messages,
-
             temperature=0,
-
             max_tokens=100
-
         ).strip()
+
 
     except Exception:
 
         logger.exception(
-
             "History-aware rewriting failed."
-
         )
 
         return question
+
 
     if not rewritten:
 
         logger.info(
-
             "History rewriter returned an empty response."
-
         )
 
         return question
 
+
     logger.info(
-
         f"History rewrite: '{question}' -> '{rewritten}'"
-
     )
 
     return rewritten
