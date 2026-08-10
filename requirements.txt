@@ -1,10 +1,15 @@
+flask
+flask-cors
+gunicorn
+
 groq
 sentence-transformers
-torch
+torch>=2.0.0
 transformers
+
 supabase
 postgrest
+
 python-dotenv
 numpy
 httpx
-torch==2.7.1
