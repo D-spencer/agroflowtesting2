@@ -1,7 +1,5 @@
 """
 Citation utilities for AgroFlow AI.
-
-Builds a clean source list for the user.
 """
 
 import os

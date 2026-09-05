@@ -1,9 +1,5 @@
 """
-Context compression for AgroFlow AI.
-
-Removes duplicate retrieved documents,
-sorts them by relevance, and limits
-the number of chunks sent to the LLM.
+AgroFlow AI Context Compressor
 """
 
 from chatbot.config import TOP_CONTEXT_CHUNKS
@@ -11,147 +7,95 @@ from chatbot.config import TOP_CONTEXT_CHUNKS
 from chatbot.logger import logger
 
 
-# ============================================================
-# REMOVE DUPLICATE DOCUMENTS
-# ============================================================
+def remove_duplicate_documents(documents):
 
-def remove_duplicate_documents(
+    unique_documents = []
 
-    documents
-
-):
-
-    """
-    Remove duplicate documents based
-    on identical content.
-    """
-
-    unique = []
-
-    seen = set()
+    seen_content = set()
 
     duplicates_removed = 0
 
-    for doc in documents:
+    for document in documents:
 
-        content = doc.get(
-
+        content = document.get(
             "content",
-
             ""
-
         ).strip().lower()
 
-        if content in seen:
+        if content in seen_content:
 
             duplicates_removed += 1
 
             continue
 
-        seen.add(content)
+        seen_content.add(
+            content
+        )
 
-        unique.append(doc)
+        unique_documents.append(
+            document
+        )
 
     logger.info(
-
-        f"Removed {duplicates_removed} duplicate document(s)."
-
+        "Removed %d duplicate document(s).",
+        duplicates_removed
     )
 
-    return unique
+    return unique_documents
 
 
-# ============================================================
-# SORT DOCUMENTS
-# ============================================================
-
-def sort_documents(
-
-    documents
-
-):
-
-    """
-    Sort documents by reranker score.
-
-    Falls back to RRF score if
-    rerank_score is unavailable.
-    """
+def sort_documents(documents):
 
     return sorted(
 
         documents,
 
-        key=lambda doc: (
+        key=lambda document: (
 
-            doc.get(
-
+            document.get(
                 "rerank_score",
-
-                doc.get(
-
+                document.get(
                     "rrf_score",
-
                     0.0
-
                 )
-
             )
 
         ),
 
         reverse=True
-
     )
 
 
-# ============================================================
-# COMPRESS CONTEXT
-# ============================================================
-
-def compress_context(
-
-    documents
-
-):
-
-    """
-    Compress retrieved documents before
-    sending them to the LLM.
-    """
+def compress_context(documents):
 
     if not documents:
 
         logger.info(
-
             "No documents available for context compression."
-
         )
 
         return []
 
-    original_count = len(documents)
+    original_count = len(
+        documents
+    )
 
     documents = remove_duplicate_documents(
-
         documents
-
     )
 
     documents = sort_documents(
-
         documents
-
     )
 
-    documents = documents[:TOP_CONTEXT_CHUNKS]
+    documents = documents[
+        :TOP_CONTEXT_CHUNKS
+    ]
 
     logger.info(
-
-        f"Context compressed from {original_count} "
-
-        f"to {len(documents)} document(s)."
-
+        "Context compressed from %d to %d document(s).",
+        original_count,
+        len(documents)
     )
 
     return documents

@@ -3,9 +3,6 @@ Reciprocal Rank Fusion (RRF)
 
 Combines multiple ranked retrieval lists into
 a single ranking.
-
-Reference:
-Cormack et al. (2009)
 """
 
 RRF_K = 60

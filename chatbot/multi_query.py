@@ -14,10 +14,6 @@ from chatbot.llm import ask_llm
 logger = logging.getLogger(__name__)
 
 
-# ============================================================
-# SYSTEM PROMPT
-# ============================================================
-
 MULTI_QUERY_SYSTEM_PROMPT = """
 You are an expert agricultural search assistant.
 
@@ -28,32 +24,19 @@ agricultural knowledge base.
 Rules:
 
 1. Preserve the original meaning.
-
 2. Use different wording for each query.
-
 3. Expand abbreviations when appropriate.
-
 4. Include agricultural terminology.
-
 5. Keep each query concise.
-
 6. Return ONLY the search queries.
-
 7. One query per line.
-
 8. Generate exactly 4 queries.
 
 Do not number them.
-
 Do not explain anything.
-
 Do not answer the question.
 """
 
-
-# ============================================================
-# GENERATE MULTIPLE SEARCH QUERIES
-# ============================================================
 
 def generate_multi_queries(
     llm,
@@ -75,61 +58,30 @@ def generate_multi_queries(
 
         {
             "role": "user",
-            "content":
-                f"Generate four agricultural search queries for:\n\n"
+            "content": (
+                "Generate four agricultural search queries for:\n\n"
                 f"{question}"
+            )
         }
 
     ]
 
-
-    # ========================================================
-    # ASK LLM
-    # ========================================================
-
     response = ask_llm(
-
         client=llm,
-
         messages=messages,
-
         temperature=0.2,
-
         max_tokens=200
-
     )
 
-
-    # ========================================================
-    # SPLIT RESPONSE INTO QUERIES
-    # ========================================================
-
     queries = [
-
         line.strip()
-
         for line in response.splitlines()
-
         if line.strip()
-
     ]
-
-
-    # ========================================================
-    # REMOVE NUMBERING
-    # ========================================================
 
     cleaned_queries = []
 
-
     for query in queries:
-
-        # ----------------------------------------------------
-        # Remove formats such as:
-        #
-        # 1. query
-        # 2) query
-        # ----------------------------------------------------
 
         if "." in query[:4]:
 
@@ -138,7 +90,6 @@ def generate_multi_queries(
                 1
             )[1].strip()
 
-
         if ")" in query[:4]:
 
             query = query.split(
@@ -146,49 +97,26 @@ def generate_multi_queries(
                 1
             )[1].strip()
 
-
-        # ----------------------------------------------------
-        # Remove bullet points
-        # ----------------------------------------------------
-
         if query.startswith("-"):
 
             query = query[1:].strip()
 
-
-        # ----------------------------------------------------
-        # Ignore empty queries
-        # ----------------------------------------------------
-
         if not query:
-
             continue
-
 
         cleaned_queries.append(
             query
         )
 
-
-    # ========================================================
-    # REMOVE DUPLICATE QUERIES
-    # ========================================================
-
     unique_queries = []
 
     seen = set()
 
-
     for query in cleaned_queries:
-
-        # Normalize only for duplicate checking.
-        #
-        # The original query text is preserved.
 
         key = " ".join(
             query.lower().split()
         )
-
 
         if key in seen:
 
@@ -199,22 +127,15 @@ def generate_multi_queries(
 
             continue
 
-
         seen.add(key)
 
         unique_queries.append(
             query
         )
 
-
-    # ========================================================
-    # ALWAYS INCLUDE ORIGINAL QUESTION
-    # ========================================================
-
     original_key = " ".join(
         question.lower().split()
     )
-
 
     if original_key not in seen:
 
@@ -223,28 +144,16 @@ def generate_multi_queries(
             question
         )
 
-
-    # ========================================================
-    # LIMIT TOTAL QUERIES
-    # ========================================================
-
     unique_queries = unique_queries[:5]
-
-
-    # ========================================================
-    # LOGGING
-    # ========================================================
 
     logger.info(
         "Multi-Query Generation"
     )
 
-
     logger.info(
         "Original Question: %s",
         question
     )
-
 
     logger.info(
         "Generated %d unique search quer%s.",
@@ -253,7 +162,6 @@ def generate_multi_queries(
         if len(unique_queries) == 1
         else "ies"
     )
-
 
     for i, query in enumerate(
         unique_queries,
@@ -265,6 +173,5 @@ def generate_multi_queries(
             i,
             query
         )
-
 
     return unique_queries

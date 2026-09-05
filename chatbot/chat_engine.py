@@ -1,21 +1,9 @@
 """
 AgroFlow AI Chat Engine
-
-Responsible for:
-
-- Detecting simple conversational messages
-- Maintaining conversation context
-- Extracting conversation topics
-- Rewriting follow-up questions
-- Running the RAG retrieval pipeline
-- Building prompts
-- Generating LLM responses
-- Adding citations
-- Saving conversation history
 """
 
 from chatbot.config import (
-    RRF_SCORE_THRESHOLD
+    RELEVANCE_SCORE_THRESHOLD
 )
 
 from chatbot.retrieval import (
@@ -24,10 +12,6 @@ from chatbot.retrieval import (
 
 from chatbot.context_builder import (
     build_context
-)
-
-from chatbot.context_compressor import (
-    compress_context
 )
 
 from chatbot.history_rewriter import (
@@ -56,10 +40,6 @@ from chatbot.llm import (
     ask_llm
 )
 
-from chatbot.memory import (
-    add_conversation
-)
-
 from chatbot.messages import (
     build_messages
 )
@@ -71,28 +51,282 @@ from chatbot.conversation_context import (
     get_history
 )
 
+from chatbot.weather import (
+    get_formatted_weather
+)
+
+from chatbot.weather_context import (
+    build_weather_context
+)
+
 from chatbot.logger import logger
 
 
-# ============================================================
-# CONVERSATIONAL RESPONSE
-# ============================================================
+WEATHER_KEYWORDS = {
+    "weather",
+    "rain",
+    "rainfall",
+    "forecast",
+    "temperature",
+    "humidity",
+    "wind",
+    "windy",
+    "storm",
+    "thunderstorm",
+    "drizzle",
+    "sunny",
+    "cloudy",
+    "overcast",
+    "precipitation",
+    "shower",
+    "showers",
+    "drought",
+    "dry",
+    "wet",
+    "heat",
+    "cold",
+    "hot",
+    "cool",
+    "climate",
+}
 
-def build_conversational_prompt(question):
-    """
-    Build a short prompt for simple conversational messages.
 
-    These messages do not require:
+WEATHER_AGRICULTURAL_ACTIVITIES = {
+    "plant",
+    "planting",
+    "planted",
+    "sow",
+    "sowing",
+    "spray",
+    "spraying",
+    "sprayed",
+    "irrigate",
+    "irrigation",
+    "fertilizer",
+    "fertilize",
+    "fertilizing",
+    "harvest",
+    "harvesting",
+    "dry",
+    "drying",
+    "weed",
+    "weeding",
+    "transplant",
+    "transplanting",
+    "cultivate",
+    "cultivation",
+}
 
-        - Topic extraction
-        - History rewriting
-        - Query rewriting
-        - RAG retrieval
-        - Vector search
-        - Keyword search
-        - RRF
-        - Reranking
-    """
+
+WEATHER_TIME_INDICATORS = {
+    "today",
+    "tomorrow",
+    "tonight",
+    "morning",
+    "afternoon",
+    "evening",
+    "yesterday",
+    "now",
+    "currently",
+    "current",
+    "this",
+    "next",
+}
+
+
+LOCATION_INDICATORS = {
+    "location",
+    "area",
+    "place",
+    "here",
+    "nearby",
+    "region",
+    "farm",
+    "field",
+}
+
+
+def is_weather_question(question: str) -> bool:
+
+    if not question:
+        return False
+
+    normalized = (
+        question
+        .lower()
+        .strip()
+    )
+
+    for character in (
+        "?",
+        ",",
+        ".",
+        "!",
+        ";",
+        ":",
+        "(",
+        ")",
+        "'",
+        '"'
+    ):
+
+        normalized = normalized.replace(
+            character,
+            " "
+        )
+
+    words = set(
+        normalized.split()
+    )
+
+    if words.intersection(
+        WEATHER_KEYWORDS
+    ):
+
+        return True
+
+    has_agricultural_activity = bool(
+        words.intersection(
+            WEATHER_AGRICULTURAL_ACTIVITIES
+        )
+    )
+
+    has_time_indicator = bool(
+        words.intersection(
+            WEATHER_TIME_INDICATORS
+        )
+    )
+
+    has_location_indicator = bool(
+        words.intersection(
+            LOCATION_INDICATORS
+        )
+    )
+
+    weather_intent_phrases = (
+        "based on my location",
+        "based on the weather",
+        "based on weather",
+        "according to the weather",
+        "according to weather",
+        "weather conditions",
+        "weather forecast",
+        "based on today's weather",
+        "based on tomorrow's weather",
+        "in my area",
+        "in my location",
+        "at my location",
+        "where i am",
+        "where i live",
+        "can i plant",
+        "should i plant",
+        "can i spray",
+        "should i spray",
+        "can i irrigate",
+        "should i irrigate",
+        "can i harvest",
+        "should i harvest",
+        "can i sow",
+        "should i sow",
+        "can i dry",
+        "should i dry",
+        "can i weed",
+        "should i weed",
+        "can i transplant",
+        "should i transplant",
+    )
+
+    for phrase in weather_intent_phrases:
+
+        if phrase in normalized:
+            return True
+
+    if (
+        has_agricultural_activity
+        and
+        has_time_indicator
+    ):
+
+        return True
+
+    if (
+        has_agricultural_activity
+        and
+        has_location_indicator
+    ):
+
+        return True
+
+    return False
+
+
+def build_chat_response(
+    answer,
+    supabase,
+    session_id,
+    user_id=None
+):
+
+    try:
+
+        current_topic = get_topic(
+            supabase=supabase,
+            session_id=session_id,
+            user_id=user_id
+        )
+
+    except Exception:
+
+        logger.exception(
+            "Failed to retrieve current topic "
+            "for session %s.",
+            session_id
+        )
+
+        current_topic = None
+
+    return {
+        "response": answer,
+        "topic": current_topic
+    }
+
+
+def build_conversational_prompt(
+    question,
+    history=None
+):
+
+    history_text = ""
+
+    if history:
+
+        history_lines = []
+
+        for message in history:
+
+            role = message.get(
+                "role",
+                ""
+            )
+
+            content = message.get(
+                "content",
+                ""
+            )
+
+            if not content:
+                continue
+
+            history_lines.append(
+                f"{role}: {content}"
+            )
+
+        if history_lines:
+
+            history_text = (
+                "\nPrevious conversation:\n"
+                + "\n".join(history_lines)
+            )
 
     return f"""
 You are AgroFlow AI, a friendly agricultural assistant.
@@ -107,12 +341,17 @@ Rules:
 - If appropriate, mention that you are ready to help with agriculture or farming.
 - If the user thanks you, respond naturally and briefly.
 - If the user says okay, alright, great, nice, or perfect, acknowledge them naturally.
-- If the user says continue or go on, respond naturally based on the ongoing conversation when possible.
+- If the user says continue, next, or go on, respond naturally based on the conversation when possible.
+- If the user asks you to repeat, summarize, expand, shorten, translate, or rewrite something, follow the request using the conversation context when available.
 - Do not force an agricultural explanation.
 - Do not give unnecessary information.
 - Do not mention the knowledge base.
 - Do not mention retrieval.
 - Do not mention system operations.
+
+Previous conversation context:
+
+{history_text}
 
 User message:
 
@@ -122,83 +361,481 @@ Respond naturally.
 """
 
 
-# ============================================================
-# SAVE CONVERSATION EXCHANGE
-# ============================================================
-
 def save_conversation_exchange(
+    supabase,
+    session_id,
+    user_id,
     question,
     answer
 ):
-    """
-    Save the user message and assistant response
-    to both conversation contexts.
-    """
 
-    add_conversation(
-        question,
-        answer
-    )
+    try:
 
-    add_assistant_message(
-        answer
-    )
+        user_saved = add_user_message(
+            supabase=supabase,
+            session_id=session_id,
+            user_id=user_id,
+            message=question
+        )
+
+        if not user_saved:
+
+            logger.warning(
+                "User message was not saved "
+                "for session %s.",
+                session_id
+            )
+
+    except Exception:
+
+        logger.exception(
+            "Failed to save user message "
+            "for session %s.",
+            session_id
+        )
+
+    try:
+
+        assistant_saved = add_assistant_message(
+            supabase=supabase,
+            session_id=session_id,
+            user_id=user_id,
+            message=answer
+        )
+
+        if not assistant_saved:
+
+            logger.warning(
+                "Assistant message was not saved "
+                "for session %s.",
+                session_id
+            )
+
+    except Exception:
+
+        logger.exception(
+            "Failed to save assistant message "
+            "for session %s.",
+            session_id
+        )
 
     logger.info(
-        "Conversation exchange saved."
+        "Conversation exchange processed for session %s.",
+        session_id
     )
 
-
-# ============================================================
-# HANDLE SIMPLE CONVERSATIONAL MESSAGE
-# ============================================================
 
 def handle_conversational_message(
+    session_id,
     question,
-    llm
+    llm,
+    supabase,
+    user_id=None
 ):
-    """
-    Handle greetings, thanks, acknowledgements,
-    and other simple conversational messages.
-
-    The expensive RAG pipeline is completely skipped.
-    """
 
     logger.info(
-        "Conversational message detected. "
-        "Skipping RAG pipeline."
+        "Conversational message detected for session %s. "
+        "Skipping topic extraction and RAG.",
+        session_id
     )
 
-    # --------------------------------------------------------
-    # Save user message
-    # --------------------------------------------------------
-
-    add_user_message(
-        question
+    history = get_history(
+        supabase=supabase,
+        session_id=session_id,
+        user_id=user_id
     )
-
-    # --------------------------------------------------------
-    # Build conversational prompt
-    # --------------------------------------------------------
 
     user_prompt = build_conversational_prompt(
-        question
+        question=question,
+        history=history
     )
-
-    # --------------------------------------------------------
-    # Build messages
-    # --------------------------------------------------------
 
     messages = build_messages(
         user_prompt
     )
 
-    # --------------------------------------------------------
-    # Ask LLM
-    # --------------------------------------------------------
-
     logger.info(
         "Sending conversational response to LLM..."
+    )
+
+    try:
+
+        answer = ask_llm(
+            client=llm,
+            messages=messages
+        )
+
+    except Exception:
+
+        logger.exception(
+            "Conversational LLM request failed."
+        )
+
+        answer = (
+            "I'm here to help. "
+            "What would you like to know?"
+        )
+
+    logger.info(
+        "Conversational response generated."
+    )
+
+    save_conversation_exchange(
+        supabase=supabase,
+        session_id=session_id,
+        user_id=user_id,
+        question=question,
+        answer=answer
+    )
+
+    current_history = get_history(
+        supabase=supabase,
+        session_id=session_id,
+        user_id=user_id
+    )
+
+    logger.info(
+        "Session %s conversation now contains "
+        "%d message(s).",
+        session_id,
+        len(current_history)
+    )
+
+    return build_chat_response(
+        answer=answer,
+        supabase=supabase,
+        session_id=session_id,
+        user_id=user_id
+    )
+
+
+def build_weather_prompt(
+    question,
+    weather_context,
+    agricultural_context=""
+):
+
+    return f"""
+You are AgroFlow AI, an intelligent agricultural assistant.
+
+The user is asking a question that requires current or
+forecast weather information.
+
+Use the supplied weather information to answer the question
+accurately and practically.
+
+IMPORTANT RULES:
+
+1. Use the supplied weather information as the PRIMARY source
+   for current and forecast weather conditions.
+
+2. Never invent weather conditions, temperatures, rainfall,
+   humidity, wind speeds, precipitation probabilities, or
+   forecast dates.
+
+3. Never claim that a forecast is certain.
+
+4. Clearly distinguish between:
+   - what the weather data says
+   - what the weather data suggests for the agricultural activity
+
+5. If the supplied weather information does not contain
+   enough information to answer the question confidently,
+   say so.
+
+6. When the question involves an agricultural activity such
+   as planting, sowing, spraying, irrigation, harvesting,
+   drying, weeding, transplanting, cultivation, or fertilizer
+   application, explain how the available weather conditions
+   affect that activity.
+
+7. Give a practical recommendation when the available
+   weather information supports one.
+
+8. Consider multiple relevant weather variables rather than
+   relying on only one variable.
+
+9. For planting or sowing questions, consider:
+   - rainfall
+   - rain probability
+   - temperature
+   - excessive wetness
+   - expected dry periods
+   - suitability for field operations
+
+10. For spraying questions, pay particular attention to:
+    - rain probability
+    - precipitation
+    - wind speed
+    - temperature
+    - humidity when available
+    - timing
+
+11. For irrigation questions, consider:
+    - expected rainfall
+    - rainfall probability
+    - current conditions
+    - upcoming precipitation
+
+12. For harvesting and drying questions, consider:
+    - rainfall
+    - rain probability
+    - humidity when available
+    - consecutive wet conditions
+    - expected dry periods
+
+13. Do not invent pesticide-specific, fertilizer-specific,
+    or crop-specific requirements.
+
+14. If product-specific information is required, tell the user
+    to check the product label or relevant agricultural guidance.
+
+15. Do not make a final agricultural decision using weather
+    alone when important information is missing, such as soil
+    condition, crop growth stage, product label requirements,
+    or local field conditions.
+
+16. If the question asks about a specific future date, use the
+    forecast information corresponding to that date.
+
+17. If the requested date is outside the supplied forecast
+    period, clearly say that the supplied forecast does not
+    cover that date.
+
+18. Use simple English.
+
+19. Give the user a direct answer first.
+
+20. Keep the answer concise and practical.
+
+21. Do not mention:
+    - Open-Meteo
+    - APIs
+    - retrieval
+    - vector search
+    - the knowledge base
+    - internal systems
+    - weather service implementation
+
+WEATHER INFORMATION
+-------------------
+
+{weather_context}
+
+ADDITIONAL AGRICULTURAL INFORMATION
+-----------------------------------
+
+{agricultural_context}
+
+USER QUESTION
+-------------
+
+{question}
+
+Answer directly and practically.
+"""
+
+
+def get_weather_context(
+    latitude,
+    longitude
+):
+
+    if (
+        latitude is None
+        or
+        longitude is None
+    ):
+
+        logger.warning(
+            "Weather requested but user coordinates "
+            "were not supplied."
+        )
+
+        return ""
+
+    logger.info(
+        "Using coordinates supplied to chatbot: "
+        "latitude=%s, longitude=%s",
+        latitude,
+        longitude
+    )
+
+    logger.info(
+        "Fetching weather for "
+        "latitude=%s, longitude=%s",
+        latitude,
+        longitude
+    )
+
+    try:
+
+        weather_data = get_formatted_weather(
+            latitude=latitude,
+            longitude=longitude,
+            forecast_days=7
+        )
+
+    except Exception:
+
+        logger.exception(
+            "Weather service failed."
+        )
+
+        return ""
+
+    if not weather_data:
+
+        logger.warning(
+            "Weather service returned no data."
+        )
+
+        return ""
+
+    try:
+
+        weather_context = build_weather_context(
+            weather_data
+        )
+
+    except Exception:
+
+        logger.exception(
+            "Failed to build weather context."
+        )
+
+        return ""
+
+    if not weather_context:
+
+        logger.warning(
+            "Weather context is empty."
+        )
+
+        return ""
+
+    logger.info(
+        "Weather context generated successfully."
+    )
+
+    return weather_context
+
+
+def handle_weather_question(
+    question,
+    weather_context,
+    llm,
+    agricultural_context=""
+):
+
+    logger.info(
+        "Building weather-aware response."
+    )
+
+    user_prompt = build_weather_prompt(
+        question=question,
+        weather_context=weather_context,
+        agricultural_context=agricultural_context
+    )
+
+    messages = build_messages(
+        user_prompt
+    )
+
+    logger.info(
+        "Sending weather-aware request to LLM..."
+    )
+
+    try:
+
+        answer = ask_llm(
+            client=llm,
+            messages=messages
+        )
+
+    except Exception:
+
+        logger.exception(
+            "Weather-aware LLM request failed."
+        )
+
+        return (
+            "I was able to retrieve the weather information, "
+            "but I could not generate the weather-based answer "
+            "right now."
+        )
+
+    logger.info(
+        "Weather-aware response received."
+    )
+
+    return answer
+
+
+def run_rag_pipeline(
+    question,
+    supabase,
+    embedding_model,
+    llm
+):
+
+    try:
+
+        documents, best_relevance_score = retrieve_context(
+            question=question,
+            embedding_model=embedding_model,
+            supabase=supabase,
+            llm=llm
+        )
+
+    except Exception:
+
+        logger.exception(
+            "Retrieval pipeline failed."
+        )
+
+        return [], 0.0
+
+    if not documents:
+
+        logger.info(
+            "No documents were retrieved."
+        )
+
+        return [], best_relevance_score
+
+    logger.info(
+        "Retrieved %d document(s).",
+        len(documents)
+    )
+
+    return (
+        documents,
+        best_relevance_score
+    )
+
+
+def generate_rag_response(
+    question,
+    documents,
+    llm
+):
+
+    context = build_context(
+        documents
+    )
+
+    user_prompt = build_rag_prompt(
+        context,
+        question
+    )
+
+    messages = build_messages(
+        user_prompt
+    )
+
+    logger.info(
+        "Sending RAG request to LLM..."
     )
 
     answer = ask_llm(
@@ -207,83 +844,69 @@ def handle_conversational_message(
     )
 
     logger.info(
-        "Conversational response generated."
+        "RAG response generated."
     )
 
-    # --------------------------------------------------------
-    # Save exchange
-    # --------------------------------------------------------
+    citations = build_citations(
+        documents
+    )
 
-    save_conversation_exchange(
-        question,
-        answer
+    if citations:
+
+        answer += (
+            f"\n\n{citations}"
+        )
+
+        logger.info(
+            "Citations appended."
+        )
+
+    return answer
+
+
+def generate_general_response(
+    question,
+    llm
+):
+
+    logger.info(
+        "Using general agricultural LLM knowledge."
+    )
+
+    user_prompt = build_general_prompt(
+        question
+    )
+
+    messages = build_messages(
+        user_prompt
+    )
+
+    logger.info(
+        "Sending general agricultural request to LLM..."
+    )
+
+    answer = ask_llm(
+        client=llm,
+        messages=messages
+    )
+
+    logger.info(
+        "General agricultural response generated."
     )
 
     return answer
 
 
-# ============================================================
-# ASK CHATBOT
-# ============================================================
-
 def chat(
     question,
     supabase,
     embedding_model,
-    llm
+    llm,
+    session_id,
+    user_id=None,
+    latitude=None,
+    longitude=None
 ):
-    """
-    Main AgroFlow AI chat function.
-
-    Normal questions:
-
-        User Question
-             ↓
-        Conversation History
-             ↓
-        Topic Extraction
-             ↓
-        History Rewriting
-             ↓
-        Retrieval Pipeline
-             ↓
-        Query Rewrite
-             ↓
-        Multi-Query Generation
-             ↓
-        Vector Search
-             ↓
-        Keyword Search
-             ↓
-        RRF
-             ↓
-        Optional Reranking
-             ↓
-        Context Compression
-             ↓
-        Prompt Construction
-             ↓
-        LLM
-             ↓
-        Citations
-             ↓
-        Conversation Memory
-
-
-    Simple conversational messages:
-
-        User Message
-             ↓
-        Conversational Detection
-             ↓
-        LLM
-             ↓
-        Conversation Memory
-    """
-
-    # ========================================================
-    # BASIC VALIDATION
-    # ========================================================
 
     if not question or not question.strip():
 
@@ -291,310 +914,402 @@ def chat(
             "Empty user question received."
         )
 
-        return "Please enter a question."
+        return {
+            "response": "Please enter a question.",
+            "topic": None
+        }
 
     question = question.strip()
 
+    if not session_id or not str(session_id).strip():
 
-    # ========================================================
-    # SIMPLE CONVERSATIONAL MESSAGE
-    # ========================================================
+        logger.error(
+            "Chat request received without session_id."
+        )
+
+        return {
+            "response": (
+                "A valid conversation session is required."
+            ),
+            "topic": None
+        }
+
+    session_id = str(
+        session_id
+    ).strip()
+
+    if not user_id or not str(user_id).strip():
+
+        logger.error(
+            "Chat request received without user_id."
+        )
+
+        return {
+            "response": (
+                "A valid user ID is required."
+            ),
+            "topic": None
+        }
+
+    user_id = str(
+        user_id
+    ).strip()
+
+    logger.info(
+        "Processing chat request: "
+        "user_id=%s, session_id=%s",
+        user_id,
+        session_id
+    )
 
     if is_conversational(question):
 
         return handle_conversational_message(
+            session_id=session_id,
             question=question,
-            llm=llm
+            llm=llm,
+            supabase=supabase,
+            user_id=user_id
         )
 
-
-    # ========================================================
-    # GET PREVIOUS CONVERSATION HISTORY
-    # ========================================================
-
-    history = get_history()
+    history = get_history(
+        supabase=supabase,
+        session_id=session_id,
+        user_id=user_id
+    )
 
     logger.info(
-        "Conversation history contains %d message(s).",
+        "Session %s conversation history contains "
+        "%d message(s).",
+        session_id,
         len(history)
     )
 
+    try:
 
-    # ========================================================
-    # EXTRACT CURRENT TOPIC
-    # ========================================================
+        current_topic = get_topic(
+            supabase=supabase,
+            session_id=session_id,
+            user_id=user_id
+        )
+
+    except Exception:
+
+        logger.exception(
+            "Failed to retrieve current topic "
+            "before topic extraction."
+        )
+
+        current_topic = None
+
+    logger.info(
+        "Current topic before extraction for session %s: %s",
+        session_id,
+        current_topic
+    )
 
     try:
 
         topic = extract_topic(
-            llm,
-            question
+            llm=llm,
+            question=question,
+            history=history,
+            current_topic=current_topic
         )
 
-        if topic and topic.upper() != "UNKNOWN":
+        if (
+            topic
+            and
+            topic.strip()
+            and
+            topic.upper() != "UNKNOWN"
+        ):
+
+            topic = topic.strip()
 
             set_topic(
+                supabase=supabase,
+                session_id=session_id,
+                topic=topic,
+                user_id=user_id
+            )
+
+            logger.info(
+                "Topic updated for session %s: %s",
+                session_id,
                 topic
+            )
+
+        else:
+
+            logger.info(
+                "Topic extraction returned UNKNOWN. "
+                "Keeping existing topic for session %s: %s",
+                session_id,
+                current_topic
             )
 
     except Exception:
 
         logger.exception(
-            "Topic extraction failed."
+            "Topic extraction failed. "
+            "Keeping existing topic for session %s: %s",
+            session_id,
+            current_topic
         )
-
-    logger.info(
-        "Current topic: %s",
-        get_topic()
-    )
-
-
-    # ========================================================
-    # REWRITE QUESTION USING CONVERSATION HISTORY
-    # ========================================================
 
     try:
 
-        standalone_question = rewrite_with_history(
-
-            llm=llm,
-
-            history=history,
-
-            current_topic=get_topic(),
-
-            question=question
-
+        current_topic = get_topic(
+            supabase=supabase,
+            session_id=session_id,
+            user_id=user_id
         )
-
-        if not standalone_question:
-
-            standalone_question = question
 
     except Exception:
 
         logger.exception(
-            "History-based question rewriting failed. "
-            "Using original question."
+            "Failed to retrieve current topic "
+            "after topic extraction."
+        )
+
+        current_topic = current_topic
+
+    logger.info(
+        "Current topic for session %s: %s",
+        session_id,
+        current_topic
+    )
+
+    if history or current_topic:
+
+        try:
+
+            standalone_question = rewrite_with_history(
+                llm=llm,
+                history=history,
+                current_topic=current_topic,
+                question=question
+            )
+
+            if not standalone_question:
+
+                standalone_question = question
+
+        except Exception:
+
+            logger.exception(
+                "History-based question rewriting failed. "
+                "Using original question."
+            )
+
+            standalone_question = question
+
+    else:
+
+        logger.info(
+            "No history or topic available. "
+            "Skipping history rewrite."
         )
 
         standalone_question = question
 
+    standalone_question = (
+        standalone_question.strip()
+        if standalone_question
+        else question
+    )
 
     logger.info(
         "Standalone question: %s",
         standalone_question
     )
 
-
-    # ========================================================
-    # SAVE CURRENT USER MESSAGE
-    # ========================================================
-
-    add_user_message(
-        question
+    user_message_saved = add_user_message(
+        supabase=supabase,
+        session_id=session_id,
+        user_id=user_id,
+        message=question
     )
 
+    if not user_message_saved:
 
-    # ========================================================
-    # RETRIEVE DOCUMENTS
-    # ========================================================
-
-    try:
-
-        documents, best_rrf_score = retrieve_context(
-
-            question=standalone_question,
-
-            embedding_model=embedding_model,
-
-            supabase=supabase,
-
-            llm=llm
-
+        logger.warning(
+            "Current user message could not be saved "
+            "for session %s.",
+            session_id
         )
 
-    except Exception:
-
-        logger.exception(
-            "Retrieval pipeline failed. "
-            "Falling back to general agricultural knowledge."
-        )
-
-        documents = []
-
-        best_rrf_score = 0.0
-
+    weather_request = is_weather_question(
+        standalone_question
+    )
 
     logger.info(
-        "Retrieved %d document(s).",
-        len(documents)
+        "Weather question for session %s: %s",
+        session_id,
+        weather_request
     )
 
+    if weather_request:
 
-    # ========================================================
-    # COMPRESS RETRIEVED CONTEXT
-    # ========================================================
-
-    if documents:
-
-        documents = compress_context(
-            documents
+        logger.info(
+            "Weather-related question detected "
+            "for session %s.",
+            session_id
         )
 
-    else:
+        weather_context = get_weather_context(
+            latitude=latitude,
+            longitude=longitude
+        )
 
-        documents = []
+        if weather_context:
 
+            answer = handle_weather_question(
+                question=standalone_question,
+                weather_context=weather_context,
+                llm=llm
+            )
+
+            assistant_message_saved = add_assistant_message(
+                supabase=supabase,
+                session_id=session_id,
+                user_id=user_id,
+                message=answer
+            )
+
+            if not assistant_message_saved:
+
+                logger.warning(
+                    "Weather response could not be saved "
+                    "for session %s.",
+                    session_id
+                )
+
+            logger.info(
+                "Weather response completed successfully "
+                "for session %s.",
+                session_id
+            )
+
+            return build_chat_response(
+                answer=answer,
+                supabase=supabase,
+                session_id=session_id,
+                user_id=user_id
+            )
+
+        logger.warning(
+            "Weather was requested but no weather context "
+            "could be generated. Falling back to RAG."
+        )
 
     logger.info(
-        "Context compressed to %d chunk(s).",
-        len(documents)
+        "Starting retrieval pipeline."
     )
 
+    documents, best_relevance_score = run_rag_pipeline(
+        question=standalone_question,
+        supabase=supabase,
+        embedding_model=embedding_model,
+        llm=llm
+    )
 
-    # ========================================================
-    # DECIDE WHETHER TO USE KNOWLEDGE BASE
-    # ========================================================
+    logger.info(
+        "Final retrieval result for session %s: "
+        "%d document(s), best relevance score: %.4f",
+        session_id,
+        len(documents),
+        best_relevance_score
+    )
 
     using_knowledge_base = (
-
         len(documents) > 0
-
         and
-
-        best_rrf_score >= RRF_SCORE_THRESHOLD
-
+        best_relevance_score >= RELEVANCE_SCORE_THRESHOLD
     )
-
-
-    # ========================================================
-    # BUILD PROMPT
-    # ========================================================
 
     if using_knowledge_base:
 
         logger.info(
             "Using Knowledge Base "
-            "(Retrieval Score: %.4f)",
-            best_rrf_score
+            "(Relevance Score: %.4f >= Threshold %.4f) "
+            "for session %s.",
+            best_relevance_score,
+            RELEVANCE_SCORE_THRESHOLD,
+            session_id
         )
 
-        # ----------------------------------------------------
-        # Build retrieved context
-        # ----------------------------------------------------
+        try:
 
-        context = build_context(
-            documents
-        )
+            answer = generate_rag_response(
+                question=standalone_question,
+                documents=documents,
+                llm=llm
+            )
 
-        # ----------------------------------------------------
-        # Build RAG prompt
-        # ----------------------------------------------------
+        except Exception:
 
-        user_prompt = build_rag_prompt(
+            logger.exception(
+                "RAG response generation failed. "
+                "Falling back to general LLM."
+            )
 
-            context,
-
-            question
-
-        )
+            answer = generate_general_response(
+                question=standalone_question,
+                llm=llm
+            )
 
     else:
 
         logger.info(
             "Knowledge Base skipped "
-            "(Retrieval Score: %.4f < Threshold %.4f)",
-            best_rrf_score,
-            RRF_SCORE_THRESHOLD
+            "(Retrieved documents: %d, "
+            "Relevance Score: %.4f, "
+            "Threshold: %.4f) "
+            "for session %s.",
+            len(documents),
+            best_relevance_score,
+            RELEVANCE_SCORE_THRESHOLD,
+            session_id
         )
 
-        # ----------------------------------------------------
-        # No sufficiently relevant documents
-        # ----------------------------------------------------
-
-        user_prompt = build_general_prompt(
-            question
+        answer = generate_general_response(
+            question=standalone_question,
+            llm=llm
         )
 
-
-    # ========================================================
-    # BUILD CONVERSATION MESSAGES
-    # ========================================================
-
-    messages = build_messages(
-        user_prompt
+    assistant_message_saved = add_assistant_message(
+        supabase=supabase,
+        session_id=session_id,
+        user_id=user_id,
+        message=answer
     )
 
+    if not assistant_message_saved:
 
-    # ========================================================
-    # ASK LLM
-    # ========================================================
-
-    logger.info(
-        "Sending request to LLM..."
-    )
-
-    answer = ask_llm(
-
-        client=llm,
-
-        messages=messages
-
-    )
-
-
-    logger.info(
-        "LLM response received."
-    )
-
-
-    # ========================================================
-    # APPEND CITATIONS
-    # ========================================================
-
-    if using_knowledge_base:
-
-        citations = build_citations(
-            documents
+        logger.warning(
+            "Assistant response could not be saved "
+            "for session %s.",
+            session_id
         )
 
-        if citations:
-
-            answer += (
-                f"\n\n{citations}"
-            )
-
-            logger.info(
-                "Citations appended."
-            )
-
-
-    # ========================================================
-    # SAVE CONVERSATION
-    # ========================================================
-
-    save_conversation_exchange(
-
-        question,
-
-        answer
-
+    current_history = get_history(
+        supabase=supabase,
+        session_id=session_id,
+        user_id=user_id
     )
-
-
-    # ========================================================
-    # CONVERSATION SUMMARY
-    # ========================================================
 
     logger.info(
-        "Conversation now contains %d message(s).",
-        len(get_history())
+        "Session %s conversation now contains "
+        "%d message(s).",
+        session_id,
+        len(current_history)
     )
 
-
-    # ========================================================
-    # RETURN FINAL ANSWER
-    # ========================================================
-
-    return answer
+    return build_chat_response(
+        answer=answer,
+        supabase=supabase,
+        session_id=session_id,
+        user_id=user_id
+    )

@@ -1,12 +1,5 @@
 """
 Cross-Encoder Reranker
-
-Uses a CrossEncoder model to rerank retrieved
-documents according to their relevance to the
-user's question.
-
-Reranking can be enabled or disabled through
-the AgroFlow configuration.
 """
 
 from sentence_transformers import CrossEncoder
@@ -19,44 +12,22 @@ from chatbot.config import (
 from chatbot.logger import logger
 
 
-# ============================================================
-# SETTINGS
-# ============================================================
-
-# Maximum number of documents that will be reranked.
 MAX_RERANK_DOCUMENTS = 5
 
-# Do not rerank when there are too few documents.
 MIN_DOCUMENTS_TO_RERANK = 3
 
-# Number of question-document pairs processed at once.
 BATCH_SIZE = 16
 
-
-# ============================================================
-# GLOBAL RERANKER
-# ============================================================
 
 reranker = None
 
 
-# ============================================================
-# LOAD RERANKER
-# ============================================================
-
 def get_reranker():
     """
-    Lazily load the CrossEncoder model.
-
-    The model is loaded only once and then
-    reused for subsequent requests.
+    Lazily load the CrossEncoder model and reuse it.
     """
 
     global reranker
-
-    # --------------------------------------------------------
-    # Safety check
-    # --------------------------------------------------------
 
     if not ENABLE_RERANKING:
 
@@ -65,10 +36,6 @@ def get_reranker():
         )
 
         return None
-
-    # --------------------------------------------------------
-    # Load model only once
-    # --------------------------------------------------------
 
     if reranker is None:
 
@@ -88,38 +55,13 @@ def get_reranker():
     return reranker
 
 
-# ============================================================
-# RERANK DOCUMENTS
-# ============================================================
-
 def rerank_documents(
     question,
     documents
 ):
     """
     Rerank retrieved documents using a CrossEncoder.
-
-    If ENABLE_RERANKING is False, the original
-    document order is returned unchanged.
-
-    Parameters
-    ----------
-    question : str
-        User question.
-
-    documents : list
-        Retrieved documents.
-
-    Returns
-    -------
-    list
-        Reranked documents or original documents
-        when reranking is disabled.
     """
-
-    # --------------------------------------------------------
-    # Check whether reranking is enabled
-    # --------------------------------------------------------
 
     if not ENABLE_RERANKING:
 
@@ -130,11 +72,6 @@ def rerank_documents(
 
         return documents
 
-
-    # --------------------------------------------------------
-    # No documents
-    # --------------------------------------------------------
-
     if not documents:
 
         logger.info(
@@ -143,11 +80,6 @@ def rerank_documents(
         )
 
         return []
-
-
-    # --------------------------------------------------------
-    # Skip reranking if very few documents
-    # --------------------------------------------------------
 
     if len(documents) <= MIN_DOCUMENTS_TO_RERANK:
 
@@ -158,11 +90,6 @@ def rerank_documents(
 
         return documents
 
-
-    # --------------------------------------------------------
-    # Only rerank the top retrieved documents
-    # --------------------------------------------------------
-
     documents_to_rerank = documents[
         :MAX_RERANK_DOCUMENTS
     ]
@@ -172,11 +99,6 @@ def rerank_documents(
         len(documents_to_rerank),
         len(documents)
     )
-
-
-    # --------------------------------------------------------
-    # Load reranker
-    # --------------------------------------------------------
 
     model = get_reranker()
 
@@ -189,11 +111,6 @@ def rerank_documents(
 
         return documents
 
-
-    # --------------------------------------------------------
-    # Build question-document pairs
-    # --------------------------------------------------------
-
     pairs = [
 
         (
@@ -205,11 +122,6 @@ def rerank_documents(
 
     ]
 
-
-    # --------------------------------------------------------
-    # Predict relevance scores
-    # --------------------------------------------------------
-
     scores = model.predict(
 
         pairs,
@@ -220,11 +132,6 @@ def rerank_documents(
 
     )
 
-
-    # --------------------------------------------------------
-    # Attach scores
-    # --------------------------------------------------------
-
     for doc, score in zip(
 
         documents_to_rerank,
@@ -233,12 +140,9 @@ def rerank_documents(
 
     ):
 
-        doc["rerank_score"] = float(score)
-
-
-    # --------------------------------------------------------
-    # Sort reranked documents
-    # --------------------------------------------------------
+        doc["rerank_score"] = float(
+            score
+        )
 
     documents_to_rerank.sort(
 
@@ -247,11 +151,6 @@ def rerank_documents(
         reverse=True
 
     )
-
-
-    # --------------------------------------------------------
-    # Keep documents that were not reranked
-    # --------------------------------------------------------
 
     final_documents = (
 
@@ -263,28 +162,18 @@ def rerank_documents(
 
     )
 
-
-    # --------------------------------------------------------
-    # Logging
-    # --------------------------------------------------------
-
     if documents_to_rerank:
 
         logger.info(
-
             "Best reranker score: %.3f",
-
             documents_to_rerank[0][
                 "rerank_score"
             ]
-
         )
-
 
     logger.debug(
         "Top reranked documents:"
     )
-
 
     for index, doc in enumerate(
 
@@ -308,6 +197,5 @@ def rerank_documents(
             doc["rerank_score"]
 
         )
-
 
     return final_documents

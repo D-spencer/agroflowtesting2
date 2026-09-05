@@ -2,10 +2,11 @@
 AgroFlow AI Configuration
 """
 
-
 TOP_K = 3
 
-RRF_SCORE_THRESHOLD = 0.10
+RELEVANCE_SCORE_THRESHOLD = 0.10
+
+RRF_SCORE_THRESHOLD = RELEVANCE_SCORE_THRESHOLD
 
 TOP_CONTEXT_CHUNKS = 2
 
@@ -15,16 +16,12 @@ RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L6-v2"
 
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
-LLM_MODEL = "llama-3.3-70b-versatile"
-
+LLM_MODEL = "qwen/qwen3.6-27b"
 
 LLM_FALLBACK_MODELS = [
-
-
-    # "openai/gpt-oss-120b",
-
-    "llama-3.1-8b-instant",
-
+    "openai/gpt-oss-120b",
+    "qwen/qwen3.8-27b",
+    "openai/gpt-oss-20b",
 ]
 
 ENABLE_MODEL_FALLBACK = True

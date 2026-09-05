@@ -38,32 +38,10 @@ from chatbot.context_compressor import compress_context
 from chatbot.logger import logger
 
 
-# ============================================================
-# SETTINGS
-# ============================================================
-
-# Maximum number of search queries used by the retrieval system.
-#
-# A smaller number reduces:
-#
-# - LLM token usage
-# - Embedding generation
-# - Database queries
-# - Retrieval latency
-#
 MAX_SEARCH_QUERIES = 3
 
 
-# ============================================================
-# REMOVE DUPLICATE QUERIES
-# ============================================================
-
 def remove_duplicate_queries(queries):
-    """
-    Remove duplicate search queries while preserving order.
-
-    Comparison is case-insensitive.
-    """
 
     unique_queries = []
 
@@ -91,10 +69,6 @@ def remove_duplicate_queries(queries):
     return unique_queries
 
 
-# ============================================================
-# RETRIEVE RELEVANT DOCUMENTS
-# ============================================================
-
 def retrieve_context(
     question,
     embedding_model,
@@ -102,38 +76,10 @@ def retrieve_context(
     llm,
     match_count=TOP_K
 ):
-    """
-    Retrieve the most relevant agricultural documents.
-
-    Pipeline:
-
-        Question
-            ↓
-        Optional Query Rewrite
-            ↓
-        Multi-Query Generation
-            ↓
-        Vector Search
-            ↓
-        Keyword Search
-            ↓
-        Reciprocal Rank Fusion
-            ↓
-        Optional Reranking
-            ↓
-        Context Compression
-            ↓
-        Final Documents
-    """
 
     logger.info(
         "Starting retrieval pipeline."
     )
-
-
-    # ========================================================
-    # QUERY REWRITE
-    # ========================================================
 
     if ENABLE_QUERY_REWRITE:
 
@@ -175,16 +121,10 @@ def retrieve_context(
 
         search_query = question
 
-
     logger.info(
         "Search query: %s",
         search_query
     )
-
-
-    # ========================================================
-    # GENERATE MULTIPLE SEARCH QUERIES
-    # ========================================================
 
     try:
 
@@ -210,35 +150,19 @@ def retrieve_context(
             search_query
         ]
 
-
-    # ========================================================
-    # REMOVE DUPLICATE QUERIES
-    # ========================================================
-
     search_queries = remove_duplicate_queries(
         search_queries
     )
 
-
-    # ========================================================
-    # LIMIT NUMBER OF SEARCH QUERIES
-    # ========================================================
-
     search_queries = search_queries[
         :MAX_SEARCH_QUERIES
     ]
-
-
-    # ========================================================
-    # SAFETY FALLBACK
-    # ========================================================
 
     if not search_queries:
 
         search_queries = [
             search_query
         ]
-
 
     logger.info(
         "Using %d search quer%s.",
@@ -247,7 +171,6 @@ def retrieve_context(
         if len(search_queries) == 1
         else "ies"
     )
-
 
     for index, query in enumerate(
         search_queries,
@@ -260,13 +183,7 @@ def retrieve_context(
             query
         )
 
-
-    # ========================================================
-    # VECTOR SEARCH
-    # ========================================================
-
     vector_rank_lists = []
-
 
     for query in search_queries:
 
@@ -275,39 +192,20 @@ def retrieve_context(
             query
         )
 
-
-        # ----------------------------------------------------
-        # CREATE QUERY EMBEDDING
-        # ----------------------------------------------------
-
         embedding = create_query_embedding(
-
             embedding_model,
-
             query
-
         )
-
 
         logger.info(
             "Query embedding generated."
         )
 
-
-        # ----------------------------------------------------
-        # RETRIEVE DOCUMENTS
-        # ----------------------------------------------------
-
         docs, _ = retrieve_documents(
-
             supabase=supabase,
-
             embedding=embedding,
-
             match_count=match_count
-
         )
-
 
         if docs:
 
@@ -326,46 +224,24 @@ def retrieve_context(
                 "No vector documents retrieved."
             )
 
-
-    # ========================================================
-    # KEYWORD SEARCH
-    # ========================================================
-
-    # Use the main search query for keyword search.
-    #
-    # This avoids running additional keyword searches
-    # for every generated query.
-
     keyword_docs = keyword_search(
-
         supabase=supabase,
-
         question=search_query,
-
         match_count=match_count
-
     )
-
 
     logger.info(
         "Keyword search returned %d document(s).",
         len(keyword_docs)
     )
 
-
-    # ========================================================
-    # RECIPROCAL RANK FUSION
-    # ========================================================
-
     rank_lists = vector_rank_lists.copy()
-
 
     if keyword_docs:
 
         rank_lists.append(
             keyword_docs
         )
-
 
     if rank_lists:
 
@@ -377,16 +253,10 @@ def retrieve_context(
 
         documents = []
 
-
     logger.info(
         "RRF produced %d document(s).",
         len(documents)
     )
-
-
-    # ========================================================
-    # OPTIONAL CROSS-ENCODER RERANKING
-    # ========================================================
 
     if ENABLE_RERANKING:
 
@@ -395,11 +265,8 @@ def retrieve_context(
         )
 
         documents = rerank_documents(
-
             question,
-
             documents
-
         )
 
         logger.info(
@@ -413,110 +280,71 @@ def retrieve_context(
             "Cross-Encoder reranking disabled."
         )
 
-
-    # ========================================================
-    # CONTEXT COMPRESSION
-    # ========================================================
-
     documents = compress_context(
         documents
     )
-
 
     logger.info(
         "Context compressed to %d document(s).",
         len(documents)
     )
 
-
-    # ========================================================
-    # FINAL SCORE
-    # ========================================================
-
     if documents:
 
         if ENABLE_RERANKING:
 
-            best_score = documents[0].get(
-
+            best_relevance_score = documents[0].get(
                 "rerank_score",
-
                 documents[0].get(
                     "rrf_score",
                     0.0
                 )
-
             )
 
         else:
 
-            best_score = documents[0].get(
-
+            best_relevance_score = documents[0].get(
                 "rrf_score",
-
                 0.0
-
             )
 
     else:
 
-        best_score = 0.0
-
+        best_relevance_score = 0.0
 
     logger.info(
         "Best retrieval score: %.4f",
-        best_score
+        best_relevance_score
     )
-
-
-    # ========================================================
-    # DEBUG LOGGING
-    # ========================================================
 
     logger.debug(
         "Final retrieved documents:"
     )
 
-
     for index, doc in enumerate(
-
         documents,
-
         start=1
-
     ):
 
         logger.debug(
-
             "%d. %s | RRF=%.6f | Rerank=%.3f",
-
             index,
-
             doc.get(
                 "source",
                 "Unknown"
             ),
-
             doc.get(
                 "rrf_score",
                 0.0
             ),
-
             doc.get(
                 "rerank_score",
                 0.0
             )
-
         )
-
-
-    # ========================================================
-    # COMPLETE
-    # ========================================================
 
     logger.info(
         "Retrieval pipeline completed successfully."
     )
 
-
-    return documents, best_score
+    return documents, best_relevance_score
