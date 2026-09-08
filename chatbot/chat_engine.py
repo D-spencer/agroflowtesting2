@@ -37,7 +37,8 @@ from chatbot.citations import (
 )
 
 from chatbot.llm import (
-    ask_llm
+    ask_llm,
+    format_markdown_response
 )
 
 from chatbot.messages import (
@@ -286,7 +287,7 @@ def build_chat_response(
         current_topic = None
 
     return {
-        "response": answer,
+        "response": format_markdown_response(answer),
         "topic": current_topic
     }
 
@@ -334,6 +335,10 @@ You are AgroFlow AI, a friendly agricultural assistant.
 The user sent a simple conversational message.
 
 Respond naturally and briefly.
+
+Use valid Markdown. Keep a one-sentence reply as a plain paragraph; for a
+longer reply, use `##` headings and Markdown lists with blank lines between
+blocks. Do not use Unicode bullets, raw HTML, or decorative separator lines.
 
 Rules:
 
@@ -616,6 +621,10 @@ IMPORTANT RULES:
     - the knowledge base
     - internal systems
     - weather service implementation
+
+22. Return valid Markdown. Use `##` headings for distinct sections, `- ` for
+    bullets, and `1. ` for ordered steps. Leave blank lines between blocks;
+    do not use Unicode bullets, raw HTML, or decorative separator lines.
 
 WEATHER INFORMATION
 -------------------

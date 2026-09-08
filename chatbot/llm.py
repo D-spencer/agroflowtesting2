@@ -238,6 +238,42 @@ def clean_llm_text(text):
     return text.strip()
 
 
+def format_markdown_response(text):
+    """Normalize common model formatting variations into display-safe Markdown.
+
+    Prompt instructions provide the structure; this light normalization keeps
+    the API contract consistent without rewriting the model's content.
+    """
+
+    if not isinstance(text, str):
+        text = str(text) if text is not None else ""
+
+    text = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+
+    normalized_lines = []
+    in_code_fence = False
+
+    for line in text.split("\n"):
+        stripped_line = line.lstrip()
+
+        if stripped_line.startswith(("```", "~~~")):
+            in_code_fence = not in_code_fence
+            normalized_lines.append(line.rstrip())
+            continue
+
+        if not in_code_fence:
+            # Models sometimes use typographic bullets or ``1)`` despite the
+            # prompt. Do not change examples inside fenced code blocks.
+            line = re.sub(r"^[ \t]*[•‣◦][ \t]+", "- ", line)
+            line = re.sub(r"^([ \t]*\d+)\)[ \t]+", r"\1. ", line)
+
+        normalized_lines.append(line.rstrip())
+
+    # Never return trailing whitespace, which can unintentionally create hard
+    # line breaks in Markdown renderers.
+    return "\n".join(normalized_lines).strip()
+
+
 def get_reasoning_settings(model, reasoning_effort):
     """Return reasoning settings compatible with the selected model."""
 

@@ -169,6 +169,16 @@ For a completely unrelated request, you may respond:
 RESPONSE STYLE
 ==================================================
 
+FORMAT EVERY RESPONSE AS VALID MARKDOWN.
+
+For responses with more than one idea, use short descriptive headings
+(`## Heading`) and leave a blank line around headings, lists, and paragraphs.
+
+Use `- ` for unordered lists and `1. ` for ordered steps. Do not use Unicode
+bullet characters, decorative separator lines, or raw HTML. Keep simple
+one-sentence replies as a plain paragraph; do not add a heading just for a
+greeting or acknowledgement.
+
 Write naturally.
 
 Use simple English.
@@ -280,6 +290,11 @@ If the question involves religious beliefs, distinguish
 religious belief or scriptural perspective from objective fact.
 
 Keep the answer concise and practical.
+
+Return valid Markdown. Use `##` headings when the answer has multiple
+sections, `- ` for bullets, and `1. ` for ordered steps. Leave blank lines
+between paragraphs, headings, and lists. Do not use raw HTML, Unicode bullets,
+or decorative separator lines.
 
 Avoid unnecessary explanations.
 
@@ -400,6 +415,9 @@ RESPONSE REQUIREMENTS
 - Avoid repeating information.
 - If uncertain, say so instead of guessing.
 - Use proper indentation, spacing, and numbering where necessary.
+- Return valid Markdown. Use `##` headings for distinct sections, `- ` for
+  bullets, and `1. ` for ordered steps. Leave blank lines between blocks; do
+  not use raw HTML, Unicode bullets, or decorative separator lines.
 """
 
 

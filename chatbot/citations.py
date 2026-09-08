@@ -157,14 +157,7 @@ def build_citations(documents):
     )
 
     lines = [
-
-        "",
-
-        "AgroFlow Knowledge Base",
-
-        "-" * 40,
-
-        "Sources",
+        "## Sources",
 
         ""
 
@@ -183,8 +176,6 @@ def build_citations(documents):
             f"{index}. {clean_source_name(document)}"
 
         )
-
-        lines.append("")
 
     logger.info(
 

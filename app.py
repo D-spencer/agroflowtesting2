@@ -10,7 +10,7 @@ from flask_cors import CORS
 
 from chatbot.database import get_supabase
 from chatbot.embeddings import load_embedding_model
-from chatbot.llm import get_llm
+from chatbot.llm import get_llm, format_markdown_response
 from chatbot.chat_engine import chat
 from chatbot.logger import logger
 
@@ -375,7 +375,7 @@ def chat_endpoint():
             ) if answer is not None else ""
 
 
-        answer = answer.strip()
+        answer = format_markdown_response(answer)
 
 
         if not answer:
