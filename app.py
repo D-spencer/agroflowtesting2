@@ -5,7 +5,7 @@ AgroFlow AI Flask API
 import os
 from datetime import datetime, timezone
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 
 from chatbot.database import get_supabase
@@ -375,7 +375,9 @@ def chat_endpoint():
             ) if answer is not None else ""
 
 
-        answer = format_markdown_response(answer)
+        answer = format_markdown_response(
+            answer
+        )
 
 
         if not answer:
@@ -510,6 +512,17 @@ def health():
 
 
 @app.route(
+    "/test",
+    methods=["GET"]
+)
+def tester():
+
+    return render_template(
+        "tester.html"
+    )
+
+
+@app.route(
     "/",
     methods=["GET"]
 )
@@ -532,7 +545,10 @@ def root():
                 "POST - Send a message to AgroFlow AI",
 
             "/health":
-                "GET - Check AI service health"
+                "GET - Check AI service health",
+
+            "/test":
+                "GET - AgroFlow AI testing interface"
 
         }
 
